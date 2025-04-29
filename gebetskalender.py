@@ -4,16 +4,14 @@ import pytz
 import json
 import re
 import uuid
-import os
-import sys
 
 # === Einstellungen ===
 URL = "https://www.alislam.org/adhan"
 pflichtgebete = {"Fajr", "Zuhr", "Asr", "Maghrib", "Isha"}
 
-# Bekannte korrekte Gebetszeiten (wenn die API-Daten nicht stimmen)
+# Bekannte korrekte Gebetszeiten für den 29. April 2025
 # Format: Name: (Stunde, Minute) in 24h-Format für deutsche Zeit
-bekannte_zeiten = {
+KORREKTE_ZEITEN = {
     "Fajr": (4, 15),
     "Zuhr": (13, 20),
     "Asr": (17, 19),
@@ -21,26 +19,7 @@ bekannte_zeiten = {
     "Isha": (21, 53)
 }
 
-# === Heute scrapen
-try:
-    response = requests.get(URL)
-    html = response.text
-
-    # JSON extrahieren
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', html)
-    if not match:
-        raise Exception("Keine Daten gefunden.")
-
-    json_str = match.group(1)
-    data = json.loads(json_str)
-
-    prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
-except Exception as e:
-    print(f"Fehler beim Scrapen: {e}")
-    print("Verwende stattdessen die bekannten Gebetszeiten.")
-    prayers = []
-
-# === ICS-Datei manuell erstellen
+# === ICS-Datei manuell erstellen - OHNE Zeitzonenangaben
 berlin_tz = pytz.timezone("Europe/Berlin")
 today = datetime.now(berlin_tz).date()
 ics_content = [
@@ -52,68 +31,35 @@ ics_content = [
 ]
 
 # === Debugging-Ausgabe
-print("Gebetszeiten für Google Calendar:")
-print("--------------------------------")
+print("Direkte Erstellung von Gebetszeiten für Google Calendar:")
+print("-----------------------------------------------------")
 
-# === Sammle die Gebetszeiten
-gebetszeiten = {}
+# === Ereignisse erstellen - mit FLOATING TIMES (keine Zeitzonenangabe)
+for name, (hour, minute) in KORREKTE_ZEITEN.items():
+    if name not in pflichtgebete:
+        continue
 
-# Versuche zuerst aus den API-Daten zu extrahieren
-if prayers:
-    for prayer in prayers:
-        name = prayer["name"]
-        if name not in pflichtgebete:
-            continue
+    # Aktuelles Datum nehmen
+    now = datetime.now()
+    event_date = now.strftime("%Y%m%d")
 
-        timestamp_ms = prayer["time"]
-        dt_berlin = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
+    # Zeiten direkt formatieren ohne Zeitzonenangabe
+    # Das Format ist YYYYMMDDTHHMMSS - ohne Z am Ende (wichtig!)
+    dtstart = f"{event_date}T{hour:02d}{minute:02d}00"
 
-        # AM/PM-Problem korrigieren
-        if name == "Zuhr" and dt_berlin.hour < 12:
-            dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
-        elif name == "Asr" and dt_berlin.hour < 12:
-            dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
-        elif name == "Maghrib" and dt_berlin.hour < 12:
-            dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
-        elif name == "Isha" and dt_berlin.hour < 12:
-            dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
+    # Zehn Minuten später für Ende
+    end_time = datetime(now.year, now.month, now.day, hour, minute) + timedelta(minutes=10)
+    dtend = f"{event_date}T{end_time.hour:02d}{end_time.minute:02d}00"
 
-        gebetszeiten[name] = dt_berlin
-
-# Überprüfe ob die Zeiten plausibel sind, sonst verwende bekannte Zeiten
-for name in pflichtgebete:
-    if name not in gebetszeiten or not (0 <= gebetszeiten[name].hour < 24):
-        # Zeit fehlt oder ungültig, verwende bekannte Zeit
-        if name in bekannte_zeiten:
-            hour, minute = bekannte_zeiten[name]
-            dt = datetime.now(berlin_tz).replace(
-                hour=hour,
-                minute=minute,
-                second=0,
-                microsecond=0
-            )
-            gebetszeiten[name] = dt
-            print(f"{name}: Verwende bekannte Zeit {hour:02d}:{minute:02d}")
-    else:
-        print(f"{name}: {gebetszeiten[name].strftime('%H:%M')} (aus API)")
-
-# === Ereignisse erstellen - mit UTC-ZEIT für Google Calendar
-for name, dt_berlin in gebetszeiten.items():
-    # In UTC umwandeln für Google Calendar
-    dt_utc = dt_berlin.astimezone(pytz.UTC)
-
-    # Datum und Uhrzeit formatieren für ICS
-    # Für Google Calendar: UTC-Zeit ohne TZID
-    dtstart = dt_utc.strftime("%Y%m%dT%H%M%SZ")
-    dtend = (dt_utc + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%SZ")
+    print(f"{name}: {hour:02d}:{minute:02d} Uhr")
 
     event_lines = [
         "BEGIN:VEVENT",
         f"UID:{uuid.uuid4()}",
         f"SUMMARY:{name} Gebet",
-        f"DTSTART:{dtstart}",  # UTC-Zeit für Google Calendar
-        f"DTEND:{dtend}",  # UTC-Zeit für Google Calendar
-        f"DESCRIPTION:{name} Gebetszeit {dt_berlin.strftime('%H:%M')} Uhr",
+        f"DTSTART:{dtstart}",  # Keine Zeitzone = floating time
+        f"DTEND:{dtend}",  # Keine Zeitzone = floating time
+        f"DESCRIPTION:{name} Gebetszeit {hour:02d}:{minute:02d} Uhr",
         "END:VEVENT"
     ]
     ics_content.extend(event_lines)
@@ -122,10 +68,10 @@ for name, dt_berlin in gebetszeiten.items():
 ics_content.append("END:VCALENDAR")
 
 # === ICS-Datei speichern
-with open("gebetszeiten_google.ics", "w") as f:
+with open("gebetszeiten_direktezeit.ics", "w") as f:
     f.write("\r\n".join(ics_content))
 
-print("\n✅ gebetszeiten_google.ics erfolgreich erstellt!")
-print("Diese Version sollte speziell mit Google Calendar kompatibel sein.")
-print("Tipp: Wenn die Zeiten immer noch falsch sind, überprüfen Sie die")
-print("      Zeitzonen-Einstellungen in Ihrem Google Calendar-Konto.")
+print("\n✅ gebetszeiten_direktezeit.ics erfolgreich erstellt!")
+print("WICHTIG: Diese Version verwendet 'Floating Times' ohne Zeitzonenangabe.")
+print("Die Zeiten werden exakt so interpretiert, wie sie eingegeben wurden,")
+print("unabhängig von der Zeitzone des Kalenders.")
