@@ -9,17 +9,7 @@ import uuid
 URL = "https://www.alislam.org/adhan"
 pflichtgebete = {"Fajr", "Zuhr", "Asr", "Maghrib", "Isha"}
 
-# Bekannte korrekte Gebetszeiten für den 29. April 2025
-# Format: Name: (Stunde, Minute) in 24h-Format für deutsche Zeit
-KORREKTE_ZEITEN = {
-    "Fajr": (4, 15),
-    "Zuhr": (13, 20),
-    "Asr": (17, 19),
-    "Maghrib": (20, 46),
-    "Isha": (21, 53)
-}
-
-# === ICS-Datei manuell erstellen - OHNE Zeitzonenangaben
+# === ICS-Datei vorbereiten
 berlin_tz = pytz.timezone("Europe/Berlin")
 today = datetime.now(berlin_tz).date()
 ics_content = [
@@ -28,50 +18,59 @@ ics_content = [
     "PRODID:-//Gebetszeiten//alislam.org//DE",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
+    "X-WR-TIMEZONE:Europe/Berlin",  # Zeitzone für den Kalender setzen
 ]
 
-# === Debugging-Ausgabe
-print("Direkte Erstellung von Gebetszeiten für Google Calendar:")
-print("-----------------------------------------------------")
+# === Gebetszeiten scrapen
+response = requests.get(URL)
+html = response.text
 
-# === Ereignisse erstellen - mit FLOATING TIMES (keine Zeitzonenangabe)
-for name, (hour, minute) in KORREKTE_ZEITEN.items():
+match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>', html)
+if not match:
+    raise Exception("Keine Gebetszeiten gefunden!")
+
+json_str = match.group(1)
+data = json.loads(json_str)
+
+prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
+
+# === Debug-Ausgabe
+print("Gebetszeiten für Google Calendar:")
+print("--------------------------------")
+
+for prayer in prayers:
+    name = prayer["name"]
     if name not in pflichtgebete:
         continue
 
-    # Aktuelles Datum nehmen
-    now = datetime.now()
-    event_date = now.strftime("%Y%m%d")
+    timestamp_ms = prayer["time"]
 
-    # Zeiten direkt formatieren ohne Zeitzonenangabe
-    # Das Format ist YYYYMMDDTHHMMSS - ohne Z am Ende (wichtig!)
-    dtstart = f"{event_date}T{hour:02d}{minute:02d}00"
+    # Zeit in Europe/Berlin umrechnen
+    dt_utc = datetime.utcfromtimestamp(timestamp_ms / 1000).replace(tzinfo=pytz.UTC)
+    dt_berlin = dt_utc.astimezone(berlin_tz)
 
-    # Zehn Minuten später für Ende
-    end_time = datetime(now.year, now.month, now.day, hour, minute) + timedelta(minutes=10)
-    dtend = f"{event_date}T{end_time.hour:02d}{end_time.minute:02d}00"
+    start_time = dt_berlin.strftime("%Y%m%dT%H%M%S")
+    end_time = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
 
-    print(f"{name}: {hour:02d}:{minute:02d} Uhr")
+    print(f"{name}: {dt_berlin.strftime('%H:%M')} Uhr")
 
     event_lines = [
         "BEGIN:VEVENT",
         f"UID:{uuid.uuid4()}",
         f"SUMMARY:{name} Gebet",
-        f"DTSTART:{dtstart}",  # Keine Zeitzone = floating time
-        f"DTEND:{dtend}",  # Keine Zeitzone = floating time
-        f"DESCRIPTION:{name} Gebetszeit {hour:02d}:{minute:02d} Uhr",
+        f"DTSTART;TZID=Europe/Berlin:{start_time}",  # explizit TZID
+        f"DTEND;TZID=Europe/Berlin:{end_time}",  # explizit TZID
+        f"DESCRIPTION:{name} Gebetszeit automatisch aus alislam.org",
         "END:VEVENT"
     ]
     ics_content.extend(event_lines)
 
-# Ende der Kalenderdatei
+# === Kalenderdatei abschließen
 ics_content.append("END:VCALENDAR")
 
-# === ICS-Datei speichern
-with open("gebetszeiten_direktezeit.ics", "w") as f:
+# === Datei speichern
+with open("gebetszeiten_google.ics", "w") as f:
     f.write("\r\n".join(ics_content))
 
-print("\n✅ gebetszeiten_direktezeit.ics erfolgreich erstellt!")
-print("WICHTIG: Diese Version verwendet 'Floating Times' ohne Zeitzonenangabe.")
-print("Die Zeiten werden exakt so interpretiert, wie sie eingegeben wurden,")
-print("unabhängig von der Zeitzone des Kalenders.")
+print("\n✅ gebetszeiten_google.ics erfolgreich erstellt!")
+print("Jetzt kompatibel mit Google Calendar und korrekten Zeiten.")
