@@ -1,10 +1,10 @@
-name: Deploy gebetszeiten.ics to GitHub Pages
+name: Deploy gebetszeiten_google.ics to GitHub Pages
 
 on:
   push:
     branches: ["main"]
   schedule:
-    - cron: "0 2 * * *"  # täglich um 02:00 UTC (04:00 Berlin-Zeit)
+    - cron: "55 0 * * *"  # täglich um 01:55 Berlin-Zeit (UTC: 00:55)
   workflow_dispatch:
 
 permissions:
@@ -26,12 +26,12 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install requests ics pytz
+          pip install requests pytz
 
       - name: Run gebetskalender.py
         run: python gebetskalender.py
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy gebetszeiten_google.ics to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
