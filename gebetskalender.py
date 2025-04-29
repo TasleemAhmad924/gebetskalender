@@ -22,12 +22,11 @@ json_str = match.group(1)
 data = json.loads(json_str)
 
 prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
-source_tz = pytz.timezone("Europe/London")   # Die Seite zeigt Zeiten in UK-Zeit
-target_tz = pytz.timezone("Europe/Berlin")   # Dein Kalender ist auf deutsche Zeit eingestellt
-
-# === Kalender erstellen
+source_tz = pytz.timezone("Europe/London")   # Die Website nutzt UK-Zeitzone (AM/PM)
+target_tz = pytz.timezone("Europe/Berlin")   # Lokale Zielzeit (für Berechnung)
 calendar = Calendar()
 
+# === Ereignisse erstellen
 for prayer in prayers:
     name = prayer["name"]
     if name not in pflichtgebete:
@@ -36,11 +35,12 @@ for prayer in prayers:
     timestamp_ms = prayer["time"]
     dt_uk = datetime.fromtimestamp(timestamp_ms / 1000, source_tz)
     dt_berlin = dt_uk.astimezone(target_tz)
+    dt_utc = dt_berlin.astimezone(pytz.utc)
 
     event = Event()
     event.name = f"{name} Gebet"
-    event.begin = dt_berlin
-    event.end = dt_berlin + timedelta(minutes=10)
+    event.begin = dt_utc
+    event.end = dt_utc + timedelta(minutes=10)
     event.description = f"{name} Gebetszeit automatisch aus alislam.org"
     calendar.events.add(event)
 
