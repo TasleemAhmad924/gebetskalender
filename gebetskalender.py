@@ -22,10 +22,10 @@ json_str = match.group(1)
 data = json.loads(json_str)
 
 prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
-berlin_tz = pytz.timezone("Europe/Berlin")  # Lokale Zielzeit
-today = datetime.now(berlin_tz).date()
+berlin_tz = pytz.timezone("Europe/Berlin")  # Deutsche Zeit
 
 # === ICS-Datei manuell erstellen
+today = datetime.now(berlin_tz).date()
 ics_content = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -35,8 +35,8 @@ ics_content = [
 ]
 
 # === Debugging-Ausgabe
-print("Gebetszeiten für heute:")
-print("---------------------")
+print("Gebetszeiten Analyse:")
+print("--------------------")
 
 # === Ereignisse erstellen
 for prayer in prayers:
@@ -44,32 +44,30 @@ for prayer in prayers:
     if name not in pflichtgebete:
         continue
 
-    # Timestamp direkt aus der API
     timestamp_ms = prayer["time"]
 
-    # Auch extrahieren wir die menschenlesbare Zeit aus der API für die Debugging-Ausgabe
-    time_str = prayer.get("timeStr", "")
+    # WICHTIG: Die Timestamps von alislam.org enthalten bereits die
+    # deutschen Zeiten, sind aber im UNIX-Format (Millisekunden seit 1970)
 
-    # WICHTIG: Die Timestamps sind bereits für die Zeitzone des Benutzers berechnet,
-    # die Website zeigt nur das AM/PM-Format britischer Art an.
-    # Wir erstellen daher ein lokales Datum für heute mit der korrekten Uhrzeit.
+    # Direkt in deutsche Zeit umwandeln, ohne UK-Umweg
+    dt_berlin = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
 
-    # Von UNIX-Timestamp zur datetime
-    dt = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
-
-    # PM-Korrektur für Nachmittags-/Abendgebete
-    # (Für den Fall, dass der Timestamp nicht korrekt die 24-Stunden-Zeit darstellt)
-    if name in ["Zuhr", "Asr", "Maghrib", "Isha"] and dt.hour < 12:
-        print(
-            f"⚠️ {name}: Korrigiere Zeit von {dt.hour}:{dt.minute:02d} auf {dt.hour + 12}:{dt.minute:02d} (PM-Korrektur)")
-        dt = dt.replace(hour=dt.hour + 12)
+    # AM/PM-Problem korrigieren - falls PM-Zeit nicht erkannt wurde
+    if name == "Zuhr" and dt_berlin.hour < 12:
+        dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
+    elif name == "Asr" and dt_berlin.hour < 12:
+        dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
+    elif name == "Maghrib" and dt_berlin.hour < 12:
+        dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
+    elif name == "Isha" and dt_berlin.hour < 12:
+        dt_berlin = dt_berlin.replace(hour=dt_berlin.hour + 12)
 
     # Debugging-Ausgabe
-    print(f"{name}: {dt.strftime('%H:%M')} ({time_str})")
+    print(f"{name}: {dt_berlin.strftime('%H:%M')} Berlin")
 
-    # Datum und Uhrzeit formatieren
-    dtstart = dt.strftime("%Y%m%dT%H%M%S")
-    dtend = (dt + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
+    # Datum und Uhrzeit formatieren für ICS
+    dtstart = dt_berlin.strftime("%Y%m%dT%H%M%S")
+    dtend = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
 
     # Zeitzone explizit als "Europe/Berlin" angeben
     event_lines = [
