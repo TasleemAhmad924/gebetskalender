@@ -27,7 +27,6 @@ tz = pytz.timezone(timezone)
 
 # === Kalender erstellen
 calendar = Calendar()
-calendar.extra.append("X-WR-TIMEZONE:Europe/Berlin")
 
 for prayer in prayers:
     name = prayer["name"]
@@ -39,8 +38,8 @@ for prayer in prayers:
 
     event = Event()
     event.name = f"{name} Gebet"
-    event.begin = dt.strftime("%Y-%m-%d %H:%M:%S%z")
-    event.end = (dt + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S%z")
+    event.begin = dt
+    event.end = dt + timedelta(minutes=10)
     event.description = f"{name} Gebetszeit automatisch aus alislam.org"
     calendar.events.add(event)
 
