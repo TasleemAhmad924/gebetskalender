@@ -8,9 +8,20 @@ import uuid
 # === Einstellungen ===
 URL = "https://www.alislam.org/adhan"
 pflichtgebete = {"Fajr", "Zuhr", "Asr", "Maghrib", "Isha"}
-berlin_tz = pytz.timezone("Europe/Berlin")
 
-# === Heute scrapen
+# === ICS-Datei vorbereiten
+berlin_tz = pytz.timezone("Europe/Berlin")
+today = datetime.now(berlin_tz).date()
+ics_content = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Gebetszeiten//alislam.org//DE",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-TIMEZONE:Europe/Berlin",  # Zeitzone für den Kalender setzen
+]
+
+# === Gebetszeiten scrapen
 response = requests.get(URL)
 html = response.text
 
@@ -20,19 +31,12 @@ if not match:
 
 json_str = match.group(1)
 data = json.loads(json_str)
+
 prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
 
-# === ICS-Inhalt vorbereiten
-ics_content = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Gebetszeiten//alislam.org//DE",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH"
-]
-
-print("Gebetszeiten für Google Calendar (feste Lokalzeit via UTC):")
-print("-----------------------------------------------------------")
+# === Debug-Ausgabe
+print("Gebetszeiten für Google Calendar:")
+print("--------------------------------")
 
 for prayer in prayers:
     name = prayer["name"]
@@ -40,30 +44,33 @@ for prayer in prayers:
         continue
 
     timestamp_ms = prayer["time"]
-    dt_berlin = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
 
-    # Jetzt absichtlich als UTC exportieren – aber Uhrzeit bleibt wie in Berlin
-    dt_fake_utc = dt_berlin.astimezone(pytz.UTC)
-    dtstart = dt_fake_utc.strftime("%Y%m%dT%H%M%SZ")
-    dtend = (dt_fake_utc + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%SZ")
+    # Zeit in Europe/Berlin umrechnen
+    dt_utc = datetime.utcfromtimestamp(timestamp_ms / 1000).replace(tzinfo=pytz.UTC)
+    dt_berlin = dt_utc.astimezone(berlin_tz)
 
-    print(f"{name}: {dt_berlin.strftime('%H:%M')} Uhr → gespeichert als UTC {dt_fake_utc.strftime('%H:%M')}")
+    start_time = dt_berlin.strftime("%Y%m%dT%H%M%S")
+    end_time = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
 
-    event = [
+    print(f"{name}: {dt_berlin.strftime('%H:%M')} Uhr")
+
+    event_lines = [
         "BEGIN:VEVENT",
         f"UID:{uuid.uuid4()}",
         f"SUMMARY:{name} Gebet",
-        f"DTSTART:{dtstart}",
-        f"DTEND:{dtend}",
+        f"DTSTART;TZID=Europe/Berlin:{start_time}",  # explizit TZID
+        f"DTEND;TZID=Europe/Berlin:{end_time}",  # explizit TZID
         f"DESCRIPTION:{name} Gebetszeit automatisch aus alislam.org",
         "END:VEVENT"
     ]
-    ics_content.extend(event)
+    ics_content.extend(event_lines)
 
+# === Kalenderdatei abschließen
 ics_content.append("END:VCALENDAR")
 
 # === Datei speichern
-with open("gebetszeiten.ics", "w") as f:
+with open("gebetszeiten_google.ics", "w") as f:
     f.write("\r\n".join(ics_content))
 
-print("\n✅ gebetszeiten.ics erfolgreich erstellt – Google Calendar zeigt Berliner Uhrzeit korrekt an.")
+print("\n✅ gebetszeiten_google.ics erfolgreich erstellt!")
+print("Jetzt kompatibel mit Google Calendar und korrekten Zeiten.")
