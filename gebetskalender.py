@@ -14,6 +14,7 @@ berlin_tz = pytz.timezone(TIMEZONE)
 
 def get_prayer_times():
     """Lädt und analysiert die Gebetszeiten"""
+    print("🌐 Lade Gebetszeiten von alislam.org...")
     response = requests.get(URL)
     html = response.text
 
@@ -81,20 +82,60 @@ def create_ics_file(prayer_times):
 
     # Gebetszeiten als Events hinzufügen
     for name, dt_berlin in prayer_times.items():
-        # Format mit expliziter TZID - kein "Z" am Ende
-        dtstart = dt_berlin.strftime("%Y%m%dT%H%M%S")
-        dtend = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
+        # Zwei verschiedene Methoden zur Datumsformatierung testen
 
-        event = [
+        # METHODE 1: Absolutes UTC-Format mit "Z" am Ende
+        # Konvertiere Berlin Zeit zurück zu UTC für Kalenderkompatibilität
+        dt_utc = dt_berlin.astimezone(pytz.UTC)
+        dtstart_utc = dt_utc.strftime("%Y%m%dT%H%M%SZ")
+        dtend_utc = (dt_utc + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%SZ")
+
+        # Event für Methode 1
+        event_utc = [
             "BEGIN:VEVENT",
-            f"UID:{name}-{today_date}@gebetskalender",
-            f"SUMMARY:{name} Gebet",
-            f"DTSTART;TZID={TIMEZONE}:{dtstart}",
-            f"DTEND;TZID={TIMEZONE}:{dtend}",
-            f"DESCRIPTION:{name} Gebetszeit für {today_date}",
+            f"UID:{name}-UTC-{today_date}@gebetskalender",
+            f"SUMMARY:{name} Gebet (UTC)",
+            f"DTSTART:{dtstart_utc}",
+            f"DTEND:{dtend_utc}",
+            f"DESCRIPTION:{name} Gebetszeit für {today_date} - Dargestellt in UTC-Format",
             "END:VEVENT"
         ]
-        ics_content.extend(event)
+        ics_content.extend(event_utc)
+
+        # METHODE 2: Mit expliziter Zeitzone
+        dtstart_local = dt_berlin.strftime("%Y%m%dT%H%M%S")
+        dtend_local = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
+
+        # Event für Methode 2
+        event_local = [
+            "BEGIN:VEVENT",
+            f"UID:{name}-TZID-{today_date}@gebetskalender",
+            f"SUMMARY:{name} Gebet (TZID)",
+            f"DTSTART;TZID={TIMEZONE}:{dtstart_local}",
+            f"DTEND;TZID={TIMEZONE}:{dtend_local}",
+            f"DESCRIPTION:{name} Gebetszeit für {today_date} - Mit expliziter Zeitzone",
+            "END:VEVENT"
+        ]
+        ics_content.extend(event_local)
+
+        # METHODE 3: Direkter Wert in lokaler Zeit mit symbolischem Offset
+        # Hinweis: Dieses Format kann robuster für einige Kalenderanwendungen sein
+        offset = dt_berlin.strftime("%z")
+        offset_formatted = f"{offset[:3]}:{offset[3:]}"  # +0200 zu +02:00 formatieren
+        dtstart_offset = dt_berlin.strftime("%Y%m%dT%H%M%S") + offset_formatted
+        dtend_offset = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S") + offset_formatted
+
+        # Event für Methode 3
+        event_offset = [
+            "BEGIN:VEVENT",
+            f"UID:{name}-OFFSET-{today_date}@gebetskalender",
+            f"SUMMARY:{name} Gebet (Offset)",
+            f"DTSTART:{dtstart_offset}",
+            f"DTEND:{dtend_offset}",
+            f"DESCRIPTION:{name} Gebetszeit für {today_date} - Mit direktem Zeitzonenoffset",
+            "END:VEVENT"
+        ]
+        ics_content.extend(event_offset)
 
     ics_content.append("END:VCALENDAR")
 
@@ -102,22 +143,34 @@ def create_ics_file(prayer_times):
     with open("gebetszeiten.ics", "w") as f:
         f.write("\r\n".join(ics_content))
 
+    # Zur Diagnose auch eine Textausgabe der Datei erstellen
+    with open("gebetszeiten_debug.txt", "w") as f:
+        f.write("\r\n".join(ics_content))
+
     return ics_content
 
 
 def main():
-    print("⏱️ Lade Gebetszeiten...")
-    prayer_times = get_prayer_times()
+    try:
+        prayer_times = get_prayer_times()
 
-    print("\nGebetszeiten für heute (Berlin):")
-    print("--------------------------------")
-    for name, dt_berlin in prayer_times.items():
-        print(f"{name}: {dt_berlin.strftime('%H:%M')} Uhr")
+        print("\nGebetszeiten für heute (Berlin):")
+        print("--------------------------------")
+        for name, dt_berlin in prayer_times.items():
+            print(f"{name}: {dt_berlin.strftime('%H:%M')} Uhr")
 
-    print("\n📅 Erstelle ICS-Datei...")
-    create_ics_file(prayer_times)
+        print("\n📅 Erstelle ICS-Datei mit drei verschiedenen Methoden...")
+        create_ics_file(prayer_times)
 
-    print("\n✅ gebetszeiten.ics erfolgreich erstellt mit korrekter VTIMEZONE-Definition.")
+        print("\n✅ gebetszeiten.ics erfolgreich erstellt.")
+        print("   Diese Datei enthält jedes Gebet in drei verschiedenen Formaten.")
+        print("   Bitte teste und finde heraus, welches in deinem Kalender richtig angezeigt wird.")
+        print("\n📝 Zusätzlich wurde eine gebetszeiten_debug.txt erstellt, die identisch")
+        print("   mit der ICS-Datei ist, aber leichter zu lesen ist.")
+    except Exception as e:
+        print(f"❌ Fehler: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
