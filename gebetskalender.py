@@ -22,11 +22,10 @@ json_str = match.group(1)
 data = json.loads(json_str)
 
 prayers = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"][0]["prayers"]
-source_tz = pytz.timezone("Europe/London")  # Die Website nutzt UK-Zeitzone (AM/PM)
-target_tz = pytz.timezone("Europe/Berlin")  # Lokale Zielzeit
+berlin_tz = pytz.timezone("Europe/Berlin")  # Lokale Zielzeit
+today = datetime.now(berlin_tz).date()
 
 # === ICS-Datei manuell erstellen
-today = datetime.now(target_tz).date()
 ics_content = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -36,8 +35,8 @@ ics_content = [
 ]
 
 # === Debugging-Ausgabe
-print("Original Timestamps:")
-print("-------------------")
+print("Gebetszeiten für heute:")
+print("---------------------")
 
 # === Ereignisse erstellen
 for prayer in prayers:
@@ -45,32 +44,32 @@ for prayer in prayers:
     if name not in pflichtgebete:
         continue
 
+    # Timestamp direkt aus der API
     timestamp_ms = prayer["time"]
 
-    # Wichtig: Bei der Website werden die Zeiten in Millisekunden seit dem Epochenzeitpunkt angegeben
-    # Überprüfen, ob der Timestamp in einer vernünftigen Größenordnung liegt (für heute)
-    if timestamp_ms < 1000000000000:  # Wenn es in Sekunden statt Millisekunden ist
-        timestamp_ms *= 1000
+    # Auch extrahieren wir die menschenlesbare Zeit aus der API für die Debugging-Ausgabe
+    time_str = prayer.get("timeStr", "")
 
-    # Erst in UK-Zeit konvertieren (wie auf der Website)
-    dt_uk = datetime.fromtimestamp(timestamp_ms / 1000, source_tz)
+    # WICHTIG: Die Timestamps sind bereits für die Zeitzone des Benutzers berechnet,
+    # die Website zeigt nur das AM/PM-Format britischer Art an.
+    # Wir erstellen daher ein lokales Datum für heute mit der korrekten Uhrzeit.
 
-    # Dann in deutsche Zeit umwandeln
-    dt_berlin = dt_uk.astimezone(target_tz)
+    # Von UNIX-Timestamp zur datetime
+    dt = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
+
+    # PM-Korrektur für Nachmittags-/Abendgebete
+    # (Für den Fall, dass der Timestamp nicht korrekt die 24-Stunden-Zeit darstellt)
+    if name in ["Zuhr", "Asr", "Maghrib", "Isha"] and dt.hour < 12:
+        print(
+            f"⚠️ {name}: Korrigiere Zeit von {dt.hour}:{dt.minute:02d} auf {dt.hour + 12}:{dt.minute:02d} (PM-Korrektur)")
+        dt = dt.replace(hour=dt.hour + 12)
 
     # Debugging-Ausgabe
-    print(f"{name}: {dt_uk.strftime('%H:%M')} UK -> {dt_berlin.strftime('%H:%M')} Berlin")
-
-    # Wenn die Zeit falsch erscheint (z.B. mitten in der Nacht für Asr, Maghrib, Isha),
-    # könnte es ein Problem mit dem AM/PM-Format geben. Prüfen und korrigieren:
-    if name in ["Zuhr", "Asr", "Maghrib", "Isha"] and dt_berlin.hour < 10:
-        print(f"    ⚠️ Verdächtige Zeit für {name}, füge 12 Stunden hinzu")
-        dt_berlin = dt_berlin + timedelta(hours=12)
-        print(f"    Korrigiert zu: {dt_berlin.strftime('%H:%M')} Berlin")
+    print(f"{name}: {dt.strftime('%H:%M')} ({time_str})")
 
     # Datum und Uhrzeit formatieren
-    dtstart = dt_berlin.strftime("%Y%m%dT%H%M%S")
-    dtend = (dt_berlin + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
+    dtstart = dt.strftime("%Y%m%dT%H%M%S")
+    dtend = (dt + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%S")
 
     # Zeitzone explizit als "Europe/Berlin" angeben
     event_lines = [
