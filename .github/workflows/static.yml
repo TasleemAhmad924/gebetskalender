@@ -40,10 +40,14 @@ jobs:
           echo ""
           echo "File size: $(du -h gebetszeiten_google.ics | cut -f1)"
       
-      - name: Deploy gebetszeiten_google.ics to GitHub Pages
+      - name: Create deployment directory
+        run: |
+          mkdir -p deploy
+          cp gebetszeiten_google.ics deploy/
+          
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
+          publish_dir: ./deploy
           publish_branch: gh-pages
-          exclude_assets: '**/*.py,**/*.md,**/.git*'
