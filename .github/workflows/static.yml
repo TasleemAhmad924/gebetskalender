@@ -1,39 +1,49 @@
 name: Deploy gebetszeiten_google.ics to GitHub Pages
-
 on:
   push:
     branches: ["main"]
   schedule:
     - cron: "55 0 * * *"  # täglich um 01:55 Berlin-Zeit (UTC: 00:55)
   workflow_dispatch:
-
 permissions:
   contents: write
   pages: write
   id-token: write
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
+      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
+      
+      - name: Set timezone to Berlin
+        run: |
+          sudo timedatectl set-timezone Europe/Berlin
+          echo "Current date and time: $(date)"
+      
       - name: Install Dependencies
         run: |
           pip install requests pytz
-
+      
       - name: Run gebetskalender.py
         run: python gebetskalender.py
-
+      
+      - name: Check generated file
+        run: |
+          echo "Content of generated file:"
+          cat gebetszeiten_google.ics
+          echo ""
+          echo "File size: $(du -h gebetszeiten_google.ics | cut -f1)"
+      
       - name: Deploy gebetszeiten_google.ics to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
           publish_branch: gh-pages
+          exclude_assets: '**/*.py,**/*.md,**/.git*'
