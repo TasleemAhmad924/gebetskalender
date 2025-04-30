@@ -9,11 +9,9 @@ import uuid
 URL = "https://www.alislam.org/adhan"
 pflichtgebete = {"Fajr", "Zuhr", "Asr", "Maghrib", "Isha"}
 berlin_tz = pytz.timezone("Europe/Berlin")
+heute = datetime.now(berlin_tz).date()
 
-# === Aktuelles Datum in Berlin-Zeit ===
-today_berlin = datetime.now(berlin_tz).date()  # Heute: 2025-04-30
-
-# === Gebetszeiten von der Website holen ===
+# === Heute scrapen
 response = requests.get(URL)
 html = response.text
 
@@ -24,22 +22,21 @@ if not match:
 json_str = match.group(1)
 data = json.loads(json_str)
 
-# Alle verfügbaren Tage in multiDayTimings prüfen
-multi_day_timings = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"]
+# === Gebetszeiten für HEUTE suchen
+multi_day = data["props"]["pageProps"]["defaultSalatInfo"]["multiDayTimings"]
+heutige_gebete = None
 
-# Den Eintrag für den heutigen Tag finden
-prayers = None
-for timing in multi_day_timings:
-    timestamp_ms = timing["prayers"][0]["time"]
-    date = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz).date()
-    if date == today_berlin:
-        prayers = timing["prayers"]
+for tag in multi_day:
+    date_str = tag["date"]  # z. B. "2025-04-30"
+    datum = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if datum == heute:
+        heutige_gebete = tag["prayers"]
         break
 
-if not prayers:
-    raise Exception(f"Keine Gebetszeiten für {today_berlin} gefunden!")
+if heutige_gebete is None:
+    raise Exception("Keine Gebetszeiten für heute gefunden!")
 
-# === ICS-Inhalt vorbereiten ===
+# === ICS-Inhalt vorbereiten
 ics_content = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -48,10 +45,10 @@ ics_content = [
     "METHOD:PUBLISH"
 ]
 
-print(f"Gebetszeiten für {today_berlin} (feste Lokalzeit via UTC):")
+print("Gebetszeiten für Google Calendar (feste Lokalzeit via UTC):")
 print("-----------------------------------------------------------")
 
-for prayer in prayers:
+for prayer in heutige_gebete:
     name = prayer["name"]
     if name not in pflichtgebete:
         continue
@@ -59,7 +56,7 @@ for prayer in prayers:
     timestamp_ms = prayer["time"]
     dt_berlin = datetime.fromtimestamp(timestamp_ms / 1000, berlin_tz)
 
-    # Jetzt absichtlich als UTC exportieren – aber Uhrzeit bleibt wie in Berlin
+    # Absichtlich als UTC abspeichern, aber lokale Zeit behalten
     dt_fake_utc = dt_berlin.astimezone(pytz.UTC)
     dtstart = dt_fake_utc.strftime("%Y%m%dT%H%M%SZ")
     dtend = (dt_fake_utc + timedelta(minutes=10)).strftime("%Y%m%dT%H%M%SZ")
@@ -79,7 +76,7 @@ for prayer in prayers:
 
 ics_content.append("END:VCALENDAR")
 
-# === Datei speichern ===
+# === Datei speichern
 with open("gebetszeiten.ics", "w") as f:
     f.write("\r\n".join(ics_content))
 
