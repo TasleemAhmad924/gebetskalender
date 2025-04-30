@@ -28,7 +28,7 @@ heutige_gebete = None
 
 for tag in multi_day:
     date_str = tag["date"]  # z. B. "2025-04-30"
-    datum = datetime.strptime(date_str, "%Y-%m-%d").date()
+    datum = datetime.fromtimestamp(date_str / 1000, berlin_tz).date()
     if datum == heute:
         heutige_gebete = tag["prayers"]
         break
